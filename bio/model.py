@@ -290,10 +290,11 @@ class GNN(torch.nn.Module):
 
 class MultiHeadGNNLayer(torch.nn.Module):
 
-    def __init__(self, num_heads, emb_dim, gnn_type = "gin"):
+    def __init__(self, num_heads, emb_dim, drop_ratio = 0, gnn_type = "gin"):
         super(MultiHeadGNNLayer, self).__init__()
         self.num_heads = num_heads
         self.heads = torch.nn.ModuleList()
+        self.drop_ratio = drop_ratio
         for _ in range(num_heads):
             if gnn_type == "gin":
                 self.heads.append(GINConv(emb_dim, aggr = "add", input_layer = False))
@@ -312,6 +313,34 @@ class MultiHeadGNNLayer(torch.nn.Module):
             h_list.append(h)
 
         return torch.cat(h_list, dim = 1)    
+
+class MultiHeadGNN(torch.nn.Module):
+    """
+    Extension of GIN to incorporate edge information by concatenation.
+
+    Args:
+        num_layer (int): the number of GNN layers
+        emb_dim (int): dimensionality of embeddings
+        JK (str): last, concat, max or sum.
+        max_pool_layer (int): the layer from which we use max pool rather than add pool for neighbor aggregation
+        drop_ratio (float): dropout rate
+        gnn_type: gin, gat, graphsage, gcn
+        
+    See https://arxiv.org/abs/1810.00826
+    JK-net: https://arxiv.org/abs/1806.03536
+
+    Output:
+        node representations
+
+    """
+    def __init__(self, num_heads, num_layer, emb_dim, drop_ratio = 0, gnn_type = "gin"):
+        super(GNN, self).__init__()
+        self.gnn = GNN(num_layer - 1, emb_dim, JK = "last", drop_ratio = drop_ratio, gnn_type = gnn_type, last=False)
+        self.multi_head = MultiHeadGNNLayer(num_heads, emb_dim, drop_ratio = drop_ratio, gnn_type = gnn_type)
+    
+    def forward(self, x, edge_index, edge_attr):
+        gnn_output = self.gnn(x, edge_index, edge_attr)
+        return self.multi_head(gnn_output, edge_index, edge_attr)
 
 class GNN_graphpred(torch.nn.Module):
     """
@@ -396,8 +425,7 @@ class GNNMulti_graphpred(torch.nn.Module):
         if self.num_layer < 2:
             raise ValueError("Number of GNN layers must be greater than 1.")
 
-        self.gnn = GNN(num_layer -1, emb_dim, JK, drop_ratio, gnn_type = gnn_type, last=False)
-        self.multi_head = MultiHeadGNNLayer(self.num_heads, self.emb_dim, gnn_type)
+        self.multi_head_gnn = MultiHeadGNN(num_heads, num_layer, emb_dim, drop_ratio, gnn_type = gnn_type)
         #Different kind of graph pooling
         if graph_pooling == "sum":
             self.pool = global_add_pool
@@ -420,8 +448,7 @@ class GNNMulti_graphpred(torch.nn.Module):
 
     def forward(self, data):
         x, edge_index, edge_attr, batch = data.x, data.edge_index, data.edge_attr, data.batch
-        node_representation = self.gnn(x, edge_index, edge_attr)
-        multi_head_rep_conc = self.multi_head(node_representation, edge_index, edge_attr) # [node, self.num_heads, self.emb_dim]
+        multi_head_rep_conc = self.multi_head_gnn(x, edge_index, edge_attr) # [node, self.num_heads, self.emb_dim]
         num_nodes = multi_head_rep_conc.size(0)
 
         # Doing some gpt magic to get shape [node, task, d]
