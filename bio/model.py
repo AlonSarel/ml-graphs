@@ -243,11 +243,12 @@ class GNN(torch.nn.Module):
         node representations
 
     """
-    def __init__(self, num_layer, emb_dim, JK = "last", drop_ratio = 0, gnn_type = "gin"):
+    def __init__(self, num_layer, emb_dim, JK = "last", drop_ratio = 0, gnn_type = "gin", last=True):
         super(GNN, self).__init__()
         self.num_layer = num_layer
         self.drop_ratio = drop_ratio
         self.JK = JK
+        self.last = last
 
         if self.num_layer < 2:
             raise ValueError("Number of GNN layers must be greater than 1.")
@@ -274,7 +275,7 @@ class GNN(torch.nn.Module):
         h_list = [x]
         for layer in range(self.num_layer):
             h = self.gnns[layer](h_list[layer], edge_index, edge_attr)
-            if layer == self.num_layer - 1:
+            if self.last and layer == self.num_layer - 1:
                 #remove relu from the last layer
                 h = F.dropout(h, self.drop_ratio, training = self.training)
             else:
@@ -289,6 +290,30 @@ class GNN(torch.nn.Module):
 
         return node_representation
 
+class MultiHeadGNN(torch.nn.Module):
+
+    def __init__(self, num_heads, emb_dim, gnn_type = "gin"):
+        super(MultiHeadGNN, self).__init__()
+        self.num_heads = num_heads
+        self.heads = torch.nn.ModuleList()
+        for _ in range(num_heads):
+            if gnn_type == "gin":
+                self.heads.append(GINConv(emb_dim, aggr = "add", input_layer = False))
+            elif gnn_type == "gcn":
+                self.heads.append(GCNConv(emb_dim, input_layer = False))
+            elif gnn_type == "gat":
+                self.heads.append(GATConv(emb_dim, input_layer = False))
+            elif gnn_type == "graphsage":
+                self.heads.append(GraphSAGEConv(emb_dim, input_layer = False))
+
+    def forward(self, x, edge_index, edge_attr):
+        h_list = [x]
+        for layer in range(self.num_heads):
+            h = self.heads[layer](x, edge_index, edge_attr)
+            h = F.dropout(h, self.drop_ratio, training = self.training)
+            h_list.append(h)
+
+        return torch.cat(h_list, dim = 1)    
 
 class GNN_graphpred(torch.nn.Module):
     """
@@ -346,6 +371,76 @@ class GNN_graphpred(torch.nn.Module):
 
         return self.graph_pred_linear(graph_rep)
 
+class GNNMulti_graphpred(torch.nn.Module):
+    """
+    Extension of GIN to incorporate edge information by concatenation.
+
+    Args:
+        num_layer (int): the number of GNN layers
+        emb_dim (int): dimensionality of embeddings
+        num_tasks (int): number of tasks in multi-task learning scenario
+        drop_ratio (float): dropout rate
+        JK (str): last, concat, max or sum.
+        graph_pooling (str): sum, mean, max, attention, set2set
+        
+    See https://arxiv.org/abs/1810.00826
+    JK-net: https://arxiv.org/abs/1806.03536
+    """
+    def __init__(self, num_heads, num_layer, emb_dim, num_tasks, JK = "last", drop_ratio = 0, graph_pooling = "mean", gnn_type = "gin"):
+        super(GNNMulti_graphpred, self).__init__()
+        self.num_layer = num_layer
+        self.drop_ratio = drop_ratio
+        self.JK = JK
+        self.emb_dim = emb_dim
+        self.num_tasks = num_tasks
+        self.num_heads = num_heads
+
+        if self.num_layer < 2:
+            raise ValueError("Number of GNN layers must be greater than 1.")
+
+        self.gnn = GNN(num_layer -1, emb_dim, JK, drop_ratio, gnn_type = gnn_type, last=False)
+        self.multi_head = MultiHeadGNN(self.num_heads, self.emb_dim, gnn_type)
+        #Different kind of graph pooling
+        if graph_pooling == "sum":
+            self.pool = global_add_pool
+        elif graph_pooling == "mean":
+            self.pool = global_mean_pool
+        elif graph_pooling == "max":
+            self.pool = global_max_pool
+        elif graph_pooling == "attention":
+            self.pool = GlobalAttention(gate_nn = torch.nn.Linear(emb_dim, 1))
+        else:
+            raise ValueError("Invalid graph pooling type.")
+
+        # self.graph_pred_linear = torch.nn.Linear(2*self.emb_dim, self.num_tasks)
+        self.task_head_attention = torch.nn.Parameter(torch.Tensor(self.num_tasks, self.num_heads))
+        self.classifier = torch.nn.Parameter(torch.Tensor(self.num_tasks, 2 * self.emb_dim))
+
+
+    # def from_pretrained(self, model_file):
+    #     self.gnn.load_state_dict(torch.load(model_file, map_location=lambda storage, loc: storage))
+
+    def forward(self, data):
+        x, edge_index, edge_attr, batch = data.x, data.edge_index, data.edge_attr, data.batch
+        node_representation = self.gnn(x, edge_index, edge_attr)
+        multi_head_rep_conc = self.multi_head(node_representation, edge_index, edge_attr) # [node, self.num_heads, self.emb_dim]
+        num_nodes = multi_head_rep_conc.size(0)
+
+        # Doing some gpt magic to get shape [node, task, d]
+        multi_head_rep = multi_head_rep_conc.view(num_nodes, self.num_heads, self.emb_dim) # [node, self.num_heads, self.emb_dim]
+        weighted_task_attention = torch.nn.functional.softmax(self.task_head_attention, dim=1)
+
+        multi_head_rep_expanded = multi_head_rep.unsqueeze(1) # [node, 1, self.num_heads, self.emb_dim]
+        task_head_attention_expanded = weighted_task_attention.unsqueeze(0) # [1, self.num_tasks, self.num_heads]
+
+        node_rep_per_task = torch.sum(task_head_attention_expanded.unsqueeze(-1) * multi_head_rep_expanded, dim=2) # [node, task, d]
+
+        pooled = self.pool(node_rep_per_task, batch)  # [task, d]
+        center_node_rep = node_rep_per_task[data.center_node_idx] # [task, d]
+
+        graph_rep = torch.cat([pooled, center_node_rep], dim = 1) # [task, 2 * d]
+
+        return torch.sum(self.classifier * graph_rep, dim=1) # [tasks]
 
 if __name__ == "__main__":
     pass
