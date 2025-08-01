@@ -3,6 +3,7 @@ from pathlib import Path
 
 from loader import BioDataset
 from dataloader import DataLoaderMasking 
+from voodo_configuration import NUM_HEADS
 
 import torch
 import torch.nn as nn
@@ -12,7 +13,7 @@ import torch.optim as optim
 from tqdm import tqdm
 import numpy as np
 
-from model import GNN, GNN_graphpred
+from model import MultiHeadGNN
 
 import pandas as pd
 
@@ -115,11 +116,10 @@ def main():
 
     loader = DataLoaderMasking(dataset, batch_size=args.batch_size, shuffle=True, num_workers = args.num_workers)
 
-
     #set up models, one for pre-training and one for context embeddings
-    model = GNN(args.num_layer, args.emb_dim, JK = args.JK, drop_ratio = args.dropout_ratio, gnn_type = args.gnn_type).to(device)
+    model = MultiHeadGNN(NUM_HEADS, args.num_layer, args.emb_dim, drop_ratio = args.dropout_ratio, gnn_type = args.gnn_type).to(device)
     #Linear layer for classifying different edge types
-    linear_pred_edges = torch.nn.Linear(args.emb_dim, 7).to(device)
+    linear_pred_edges = torch.nn.Linear(args.emb_dim * NUM_HEADS, 7).to(device)
 
     model_list = [model, linear_pred_edges]
 
