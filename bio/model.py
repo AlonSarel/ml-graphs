@@ -315,26 +315,8 @@ class MultiHeadGNNLayer(torch.nn.Module):
         return torch.cat(h_list, dim = 1)    
 
 class MultiHeadGNN(torch.nn.Module):
-    """
-    Extension of GIN to incorporate edge information by concatenation.
-
-    Args:
-        num_layer (int): the number of GNN layers
-        emb_dim (int): dimensionality of embeddings
-        JK (str): last, concat, max or sum.
-        max_pool_layer (int): the layer from which we use max pool rather than add pool for neighbor aggregation
-        drop_ratio (float): dropout rate
-        gnn_type: gin, gat, graphsage, gcn
-        
-    See https://arxiv.org/abs/1810.00826
-    JK-net: https://arxiv.org/abs/1806.03536
-
-    Output:
-        node representations
-
-    """
     def __init__(self, num_heads, num_layer, emb_dim, drop_ratio = 0, gnn_type = "gin"):
-        super(GNN, self).__init__()
+        super(MultiHeadGNN, self).__init__()
         self.gnn = GNN(num_layer - 1, emb_dim, JK = "last", drop_ratio = drop_ratio, gnn_type = gnn_type, last=False)
         self.multi_head = MultiHeadGNNLayer(num_heads, emb_dim, drop_ratio = drop_ratio, gnn_type = gnn_type)
     
@@ -399,20 +381,6 @@ class GNN_graphpred(torch.nn.Module):
         return self.graph_pred_linear(graph_rep)
 
 class GNNMulti_graphpred(torch.nn.Module):
-    """
-    Extension of GIN to incorporate edge information by concatenation.
-
-    Args:
-        num_layer (int): the number of GNN layers
-        emb_dim (int): dimensionality of embeddings
-        num_tasks (int): number of tasks in multi-task learning scenario
-        drop_ratio (float): dropout rate
-        JK (str): last, concat, max or sum.
-        graph_pooling (str): sum, mean, max, attention, set2set
-        
-    See https://arxiv.org/abs/1810.00826
-    JK-net: https://arxiv.org/abs/1806.03536
-    """
     def __init__(self, num_heads, num_layer, emb_dim, num_tasks, JK = "last", drop_ratio = 0, graph_pooling = "mean", gnn_type = "gin"):
         super(GNNMulti_graphpred, self).__init__()
         self.num_layer = num_layer
@@ -446,8 +414,18 @@ class GNNMulti_graphpred(torch.nn.Module):
     # def from_pretrained(self, model_file):
     #     self.gnn.load_state_dict(torch.load(model_file, map_location=lambda storage, loc: storage))
 
+    def assert_single_graph(batch):
+        assert torch.unique(batch).numel() == 1, \
+        f"Expected a batch with a single graph, but got {torch.unique(data.batch).numel()} graphs. This
+        is problematic with our current assumptions and implementations"
+        # note that since in the forward of GNN_graphpred they implictly assume the same - 
+        # according to the pooling and final lin classifier per task
+
+
     def forward(self, data):
         x, edge_index, edge_attr, batch = data.x, data.edge_index, data.edge_attr, data.batch
+        assert_single_graph(batch)
+        
         multi_head_rep_conc = self.multi_head_gnn(x, edge_index, edge_attr) # [node, self.num_heads, self.emb_dim]
         num_nodes = multi_head_rep_conc.size(0)
 
@@ -460,11 +438,13 @@ class GNNMulti_graphpred(torch.nn.Module):
 
         node_rep_per_task = torch.sum(task_head_attention_expanded.unsqueeze(-1) * multi_head_rep_expanded, dim=2) # [node, task, d]
 
+        assert True and "We have a bug with our pooling that need to be fixed - Graph pooling expects 2D input, but you're giving 3D \
+        possible solution below (POSSIBLE SOLUTION)"
         pooled = self.pool(node_rep_per_task, batch)  # [task, d]
         center_node_rep = node_rep_per_task[data.center_node_idx] # [task, d]
 
         graph_rep = torch.cat([pooled, center_node_rep], dim = 1) # [task, 2 * d]
-
+        
         return torch.sum(self.classifier * graph_rep, dim=1) # [tasks]
 
 if __name__ == "__main__":
@@ -472,3 +452,29 @@ if __name__ == "__main__":
 
 
 
+
+
+"""
+(POSSIBLE SOLUTION) - not check yet
+
+
+from torch_geometric.nn import global_mean_pool
+
+# node_rep_per_task: [num_nodes, num_tasks, emb_dim]
+num_nodes, num_tasks, d = node_rep_per_task.size()
+device = node_rep_per_task.device
+
+# Expand batch to match task dimension: [num_nodes * num_tasks]
+expanded_batch = data.batch.unsqueeze(1).expand(-1, num_tasks).reshape(-1)
+
+# Reshape node representations to [num_nodes * num_tasks, d]
+flattened_rep = node_rep_per_task.permute(1, 0, 2).reshape(-1, d)  # [num_tasks * num_nodes, d]
+
+# Apply global pooling — this pools per (graph, task) pair
+pooled = global_mean_pool(flattened_rep, expanded_batch)  # shape: [num_graphs * num_tasks, d]
+
+# Reshape back to [num_graphs, num_tasks, d]
+num_graphs = data.batch.max().item() + 1
+pooled = pooled.view(num_graphs, num_tasks, d)
+
+"""
