@@ -290,10 +290,10 @@ class GNN(torch.nn.Module):
 
         return node_representation
 
-class MultiHeadGNN(torch.nn.Module):
+class MultiHeadGNNLayer(torch.nn.Module):
 
     def __init__(self, num_heads, emb_dim, gnn_type = "gin"):
-        super(MultiHeadGNN, self).__init__()
+        super(MultiHeadGNNLayer, self).__init__()
         self.num_heads = num_heads
         self.heads = torch.nn.ModuleList()
         for _ in range(num_heads):
@@ -399,7 +399,7 @@ class GNNMulti_graphpred(torch.nn.Module):
             raise ValueError("Number of GNN layers must be greater than 1.")
 
         self.gnn = GNN(num_layer -1, emb_dim, JK, drop_ratio, gnn_type = gnn_type, last=False)
-        self.multi_head = MultiHeadGNN(self.num_heads, self.emb_dim, gnn_type)
+        self.multi_head = MultiHeadGNNLayer(self.num_heads, self.emb_dim, gnn_type)
         #Different kind of graph pooling
         if graph_pooling == "sum":
             self.pool = global_add_pool
