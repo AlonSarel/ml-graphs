@@ -308,7 +308,7 @@ class MultiHeadGNNLayer(torch.nn.Module):
                 self.heads.append(GraphSAGEConv(emb_dim, input_layer = False))
 
     def forward(self, x, edge_index, edge_attr):
-        h_list = [x]
+        h_list = []
         for layer in range(self.num_heads):
             h = self.heads[layer](x, edge_index, edge_attr)
             h = F.dropout(h, self.drop_ratio, training = self.training)
@@ -383,20 +383,27 @@ class GNN_graphpred(torch.nn.Module):
         return self.graph_pred_linear(graph_rep)
 
 class GNNMulti_graphpred(torch.nn.Module):
-    def __init__(self, num_heads, num_layer, emb_dim, num_tasks, JK = "last", drop_ratio = 0, graph_pooling = "mean", gnn_type = "gin"):
+    def __init__(self, num_heads, num_layer, emb_dim, num_tasks, drop_ratio=0,
+                 graph_pooling="mean", gnn_type="gin"):
         super(GNNMulti_graphpred, self).__init__()
         self.num_layer = num_layer
         self.drop_ratio = drop_ratio
-        self.JK = JK
         self.emb_dim = emb_dim
         self.num_tasks = num_tasks
         self.num_heads = num_heads
-
         if self.num_layer < 2:
             raise ValueError("Number of GNN layers must be greater than 1.")
 
+        # GNN model: (num_layer - 1) base layers, 1 multi-head layer
         self.multi_head_gnn = MultiHeadGNN(num_heads, num_layer, emb_dim, drop_ratio, gnn_type = gnn_type)
-        #Different kind of graph pooling
+
+        # Task-specific scalar weights per head (for weighting node embeddings)
+        self.head_weights = nn.Parameter(torch.randn(num_tasks, self.num_heads))  # [T, H]
+
+        # Task-specific linear classifier weights (dot product with graph embedding)
+        self.task_weights = nn.Parameter(torch.randn(num_tasks, 2 * emb_dim))  # [T, 2D]
+
+        # Pooling function
         if graph_pooling == "sum":
             self.pool = global_add_pool
         elif graph_pooling == "mean":
@@ -408,47 +415,39 @@ class GNNMulti_graphpred(torch.nn.Module):
         else:
             raise ValueError("Invalid graph pooling type.")
 
-        # self.graph_pred_linear = torch.nn.Linear(2*self.emb_dim, self.num_tasks)
-        self.task_head_attention = torch.nn.Parameter(torch.Tensor(self.num_tasks, self.num_heads))
-        self.classifier = torch.nn.Parameter(torch.Tensor(self.num_tasks, 2 * self.emb_dim))
-
-
-    # def from_pretrained(self, model_file):
-    #     self.gnn.load_state_dict(torch.load(model_file, map_location=lambda storage, loc: storage))
-
-    def assert_single_graph(batch):
-        assert torch.unique(batch).numel() == 1, \
-        f"Expected a batch with a single graph, but got {torch.unique(data.batch).numel()} graphs. This
-        is problematic with our current assumptions and implementations"
-        # note that since in the forward of GNN_graphpred they implictly assume the same - 
-        # according to the pooling and final lin classifier per task
-
-
     def forward(self, data):
         x, edge_index, edge_attr, batch = data.x, data.edge_index, data.edge_attr, data.batch
-        assert_single_graph(batch)
+
+        # Node embeddings: [N, (1 + num_heads) * emb_dim]
+        node_embeddings = self.multi_head_gnn(x, edge_index, edge_attr) # [N, H*D]
+        node_embeddings = node_embeddings.view(-1, self.num_heads, self.emb_dim)  # [N, H, D]
+
+        graph_embeddings = []
+        for t in range(self.num_tasks):
+            # Scalar weights for this task: [1, H, 1]
+            weights = torch.softmax(self.head_weights[t], dim=0).view(1, self.num_heads, 1)
+
+            # Weighted node embedding per task: [N, D]
+            weighted_nodes = (node_embeddings * weights).sum(dim=1)
+
+            # Pool across graph nodes: [B, D]
+            pooled = self.pool(weighted_nodes, batch)
+
+            center_node_rep = weighted_nodes[data.center_node_idx]
+
+            # Final graph embedding: [B, 2D]
+            task_graph_embedding = torch.cat([center_node_rep, pooled], dim=1)
+
+            graph_embeddings.append(task_graph_embedding)
+
+        # [B, T, 2D]
+        graph_embeddings = torch.stack(graph_embeddings, dim=1)
+
+        # Task-specific dot product: [B, T]
+        out = torch.einsum("btd,td->bt", graph_embeddings, self.task_weights)
+        return out  # [B, T]
+
         
-        multi_head_rep_conc = self.multi_head_gnn(x, edge_index, edge_attr) # [node, self.num_heads, self.emb_dim]
-        num_nodes = multi_head_rep_conc.size(0)
-
-        # Doing some gpt magic to get shape [node, task, d]
-        multi_head_rep = multi_head_rep_conc.view(num_nodes, self.num_heads, self.emb_dim) # [node, self.num_heads, self.emb_dim]
-        weighted_task_attention = torch.nn.functional.softmax(self.task_head_attention, dim=1)
-
-        multi_head_rep_expanded = multi_head_rep.unsqueeze(1) # [node, 1, self.num_heads, self.emb_dim]
-        task_head_attention_expanded = weighted_task_attention.unsqueeze(0) # [1, self.num_tasks, self.num_heads]
-
-        node_rep_per_task = torch.sum(task_head_attention_expanded.unsqueeze(-1) * multi_head_rep_expanded, dim=2) # [node, task, d]
-
-        assert True and "We have a bug with our pooling that need to be fixed - Graph pooling expects 2D input, but you're giving 3D \
-        possible solution below (POSSIBLE SOLUTION)"
-        pooled = self.pool(node_rep_per_task, batch)  # [task, d]
-        center_node_rep = node_rep_per_task[data.center_node_idx] # [task, d]
-
-        graph_rep = torch.cat([pooled, center_node_rep], dim = 1) # [task, 2 * d]
-        
-        return torch.sum(self.classifier * graph_rep, dim=1) # [tasks]
-
 if __name__ == "__main__":
     pass
 
