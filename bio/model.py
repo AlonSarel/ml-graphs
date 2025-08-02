@@ -420,31 +420,33 @@ class GNNMulti_graphpred(torch.nn.Module):
         node_embeddings = self.multi_head_gnn(x, edge_index, edge_attr) # [N, H*D]
         node_embeddings = node_embeddings.view(-1, self.num_heads, self.emb_dim)  # [N, H, D]
 
-        graph_embeddings = []
-        for t in range(self.num_tasks):
-            # Scalar weights for this task: [1, H, 1]
-            weights = torch.softmax(self.head_weights[t], dim=0).view(1, self.num_heads, 1)
+        # Normalize head weights with softmax: [T, H]
+        weights = torch.softmax(self.head_weights, dim=1)
 
-            # Weighted node embedding per task: [N, D]
-            weighted_nodes = (node_embeddings * weights).sum(dim=1)
+        # Compute task-specific weighted node embeddings: [T, N, D]
+        # weighted_nodes[t, n, d] = sum over h of (weights[t, h] * node_embeddings[n, h, d])
+        # For each task, you get a per-node embedding that's a task-weighted combination of the head embeddings
+        weighted_nodes = torch.einsum("nhd,th->tnd", node_embeddings, weights)
 
-            # Pool across graph nodes: [B, D]
-            pooled = self.pool(weighted_nodes, batch)
+        # Task-specific pooled graph embeddings: [T, B, D]
+        pooled = torch.stack(
+            [self.pool(weighted_nodes[t], batch) for t in range(self.num_tasks)], dim=0
+        )
 
-            center_node_rep = weighted_nodes[data.center_node_idx]
+        # [T, B, D]
+        # equivalent to :center_node_rep = torch.stack([weighted_nodes[t][data.center_node_idx] for t in range(self.num_tasks)], dim=0)
+        center_node_rep = weighted_nodes[:, data.center_node_idx, :]
 
-            # Final graph embedding: [B, 2D]
-            task_graph_embedding = torch.cat([center_node_rep, pooled], dim=1)
+        # Final task-specific graph embeddings: [T, B, 2D]
+        graph_embeddings = torch.cat([center_node_rep, pooled], dim=2)
 
-            graph_embeddings.append(task_graph_embedding)
-
-        # [B, T, 2D]
-        graph_embeddings = torch.stack(graph_embeddings, dim=1)
-
-        # Task-specific dot product: [B, T]
-        out = torch.einsum("btd,td->bt", graph_embeddings, self.task_weights)
-        return out  # [B, T]
-
+        # Compute dot product with task_weights → [T, B]
+        # out[t, b] = sum over d of (graph_embeddings[t, b, d] * self.task_weights[t, d])
+        out = torch.einsum("tbd,td->tb", graph_embeddings, self.task_weights)
+        
+        # Transpose to match [B, T] (batch first)
+        return out.transpose(0,1)
+    
         
 if __name__ == "__main__":
     pass
