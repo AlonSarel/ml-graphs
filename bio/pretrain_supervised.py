@@ -14,7 +14,7 @@ import torch.optim as optim
 from tqdm import tqdm
 import numpy as np
 
-from model import GNN, GNN_graphpred
+from model import GNN, GNNMulti_graphpred
 from sklearn.metrics import roc_auc_score
 
 import pandas as pd
@@ -124,7 +124,7 @@ def main():
     num_tasks = len(pretrain_dataset[0].go_target_pretrain)
 
     #set up model
-    model = GNN_graphpred(args.num_layer, args.emb_dim, num_tasks, JK = args.JK, drop_ratio = args.dropout_ratio, graph_pooling = args.graph_pooling, gnn_type = args.gnn_type)
+    model = GNNMulti_graphpred(1, args.num_layer, args.emb_dim, num_tasks, drop_ratio = args.dropout_ratio, graph_pooling = args.graph_pooling, gnn_type = args.gnn_type)
     if not args.input_model_file == "":
         model.from_pretrained(args.input_model_file + ".pth")
     
