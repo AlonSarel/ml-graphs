@@ -396,10 +396,10 @@ class GNNMulti_graphpred(torch.nn.Module):
         self.multi_head_gnn = MultiHeadGNN(num_heads, num_layer, emb_dim, drop_ratio, gnn_type = gnn_type)
 
         # Task-specific scalar weights per head (for weighting node embeddings)
-        self.head_weights = nn.Parameter(torch.randn(num_tasks, self.num_heads))  # [T, H]
+        self.head_weights = torch.nn.Parameter(torch.randn(num_tasks, self.num_heads))  # [T, H]
 
         # Task-specific linear classifier weights (dot product with graph embedding)
-        self.task_weights = nn.Parameter(torch.randn(num_tasks, 2 * emb_dim))  # [T, 2D]
+        self.task_weights = torch.nn.Parameter(torch.randn(num_tasks, 2 * emb_dim))  # [T, 2D]
 
         # Pooling function
         if graph_pooling == "sum":
@@ -448,32 +448,3 @@ class GNNMulti_graphpred(torch.nn.Module):
         
 if __name__ == "__main__":
     pass
-
-
-
-
-
-"""
-(POSSIBLE SOLUTION) - not check yet
-
-
-from torch_geometric.nn import global_mean_pool
-
-# node_rep_per_task: [num_nodes, num_tasks, emb_dim]
-num_nodes, num_tasks, d = node_rep_per_task.size()
-device = node_rep_per_task.device
-
-# Expand batch to match task dimension: [num_nodes * num_tasks]
-expanded_batch = data.batch.unsqueeze(1).expand(-1, num_tasks).reshape(-1)
-
-# Reshape node representations to [num_nodes * num_tasks, d]
-flattened_rep = node_rep_per_task.permute(1, 0, 2).reshape(-1, d)  # [num_tasks * num_nodes, d]
-
-# Apply global pooling — this pools per (graph, task) pair
-pooled = global_mean_pool(flattened_rep, expanded_batch)  # shape: [num_graphs * num_tasks, d]
-
-# Reshape back to [num_graphs, num_tasks, d]
-num_graphs = data.batch.max().item() + 1
-pooled = pooled.view(num_graphs, num_tasks, d)
-
-"""
