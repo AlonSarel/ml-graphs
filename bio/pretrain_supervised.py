@@ -80,9 +80,13 @@ def main():
     if torch.cuda.is_available():
         torch.cuda.manual_seed_all(0)
 
+    print("using device " + torch.cuda.get_device_name(device))
+
     root_supervised = 'dataset/supervised'
 
     dataset = BioDataset(root_supervised, data_type='supervised')
+
+    print("dataset parsed")
 
     if args.split == "random":
         print("random splitting")
@@ -133,4 +137,5 @@ def main():
 
 
 if __name__ == "__main__":
+    print("started")
     main()
