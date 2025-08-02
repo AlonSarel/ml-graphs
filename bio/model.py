@@ -398,7 +398,7 @@ class GNNMulti_graphpred(torch.nn.Module):
         self.multi_head_gnn = MultiHeadGNN(num_heads, num_layer, emb_dim, drop_ratio, gnn_type = gnn_type)
 
         # Task-specific scalar weights per head (for weighting node embeddings)
-        self.head_weights = torch.nn.Parameter(torch.randn(num_tasks, self.num_heads))  # [T, H]
+        self.task_head_attention = torch.nn.Parameter(torch.randn(num_tasks, self.num_heads))  # [T, H]
 
         # Task-specific linear classifier weights (dot product with graph embedding)
         self.task_weights = torch.nn.Parameter(torch.randn(num_tasks, 2 * emb_dim))  # [T, 2D]
@@ -417,38 +417,26 @@ class GNNMulti_graphpred(torch.nn.Module):
 
     def forward(self, data):
         x, edge_index, edge_attr, batch = data.x, data.edge_index, data.edge_attr, data.batch
+        multi_head_rep_conc = self.multi_head_gnn(x, edge_index, edge_attr) # [node, self.num_heads, self.emb_dim]
+        num_nodes = multi_head_rep_conc.size(0)
 
-        # Node embeddings: [N, (1 + num_heads) * emb_dim]
-        node_embeddings = self.multi_head_gnn(x, edge_index, edge_attr) # [N, H*D]
-        node_embeddings = node_embeddings.view(-1, self.num_heads, self.emb_dim)  # [N, H, D]
+        # Doing some gpt magic to get shape [node, task, d]
+        multi_head_rep = multi_head_rep_conc.view(num_nodes, self.num_heads, self.emb_dim) # [node, self.num_heads, self.emb_dim]
+        weighted_task_attention = torch.nn.functional.softmax(self.task_head_attention, dim=1)
 
-        # Normalize head weights with softmax: [T, H]
-        weights = torch.softmax(self.head_weights, dim=1)
+        multi_head_rep_expanded = multi_head_rep.unsqueeze(1) # [node, 1, self.num_heads, self.emb_dim]
+        task_head_attention_expanded = weighted_task_attention.unsqueeze(0) # [1, self.num_tasks, self.num_heads]
 
-        # Compute task-specific weighted node embeddings: [T, N, D]
-        # weighted_nodes[t, n, d] = sum over h of (weights[t, h] * node_embeddings[n, h, d])
-        # For each task, you get a per-node embedding that's a task-weighted combination of the head embeddings
-        weighted_nodes = torch.einsum("nhd,th->tnd", node_embeddings, weights)
+        node_rep_per_task = torch.sum(task_head_attention_expanded.unsqueeze(-1) * multi_head_rep_expanded, dim=2) # [node, task, d]
 
-        # Task-specific pooled graph embeddings: [T, B, D]
-        pooled = torch.stack(
-            [self.pool(weighted_nodes[t], batch) for t in range(self.num_tasks)], dim=0
-        )
+        node_rep_per_task_reshaped = node_rep_per_task.reshape(num_nodes, self.num_tasks * self.emb_dim) # [node, task * d]
 
-        # [T, B, D]
-        # equivalent to :center_node_rep = torch.stack([weighted_nodes[t][data.center_node_idx] for t in range(self.num_tasks)], dim=0)
-        center_node_rep = weighted_nodes[:, data.center_node_idx, :]
+        pooled = self.pool(node_rep_per_task_reshaped, batch).reshape(-1, self.num_tasks, self.emb_dim)  # [B, task, d]
+        center_node_rep = node_rep_per_task_reshaped[data.center_node_idx].reshape(-1, self.num_tasks, self.emb_dim) # [B, task, d]
 
-        # Final task-specific graph embeddings: [T, B, 2D]
-        graph_embeddings = torch.cat([center_node_rep, pooled], dim=2)
+        graph_rep = torch.cat([pooled, center_node_rep], dim = 2) # [B, task, 2 * d]
 
-        # Compute dot product with task_weights → [T, B]
-        # out[t, b] = sum over d of (graph_embeddings[t, b, d] * self.task_weights[t, d])
-        out = torch.einsum("tbd,td->tb", graph_embeddings, self.task_weights)
-        
-        # Transpose to match [B, T] (batch first)
-        return out.transpose(0,1)
-    
+        return torch.sum(graph_rep * self.task_weights, dim=2) # [B, tasks]    
         
 if __name__ == "__main__":
     pass
