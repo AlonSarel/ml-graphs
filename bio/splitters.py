@@ -50,23 +50,21 @@ def species_split(dataset, train_valid_species_id_list=[3702, 6239, 511145,
     :param test_species_id_list:
     :return: train_valid dataset, test dataset
     """
-    # NB: pytorch geometric dataset object can be indexed using slices or
-    # byte tensors. We will use byte tensors here
-
-    train_valid_byte_tensor = torch.zeros(len(dataset), dtype=torch.uint8)
+    train_valid_mask = torch.zeros(len(dataset), dtype=torch.bool)
     for id in train_valid_species_id_list:
-        train_valid_byte_tensor += (dataset.data.species_id == id)
+        train_valid_mask |= (dataset.data.species_id == id)
 
-    test_species_byte_tensor = torch.zeros(len(dataset), dtype=torch.uint8)
+    test_species_mask = torch.zeros(len(dataset), dtype=torch.bool)
     for id in test_species_id_list:
-        test_species_byte_tensor += (dataset.data.species_id == id)
+        test_species_mask |= (dataset.data.species_id == id)
 
-    assert ((train_valid_byte_tensor + test_species_byte_tensor) == 1).all()
+    assert ((train_valid_mask ^ test_species_mask).all()), "Masks overlap or are incomplete"
 
-    train_valid_dataset = dataset[train_valid_byte_tensor]
-    test_valid_dataset = dataset[test_species_byte_tensor]
+    train_valid_dataset = dataset[train_valid_mask]
+    test_dataset = dataset[test_species_mask]
 
-    return train_valid_dataset, test_valid_dataset
+    return train_valid_dataset, test_dataset
+
 
 if __name__ == "__main__":
     from collections import Counter
