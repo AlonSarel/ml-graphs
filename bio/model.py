@@ -5,7 +5,7 @@ from torch_geometric.nn import global_add_pool, global_mean_pool, global_max_poo
 import torch.nn.functional as F
 from loader import BioDataset
 from dataloader import DataLoaderFinetune
-from torch_scatter import scatter_add
+# from torch_scatter import scatter_add
 from torch_geometric.nn.inits import glorot, zeros
 
 class GINConv(MessagePassing):
@@ -56,60 +56,60 @@ class GINConv(MessagePassing):
         return self.mlp(aggr_out)
 
 
-class GCNConv(MessagePassing):
+# class GCNConv(MessagePassing):
 
-    def __init__(self, emb_dim, aggr = "add", input_layer = False):
-        super(GCNConv, self).__init__()
+#     def __init__(self, emb_dim, aggr = "add", input_layer = False):
+#         super(GCNConv, self).__init__()
 
-        self.emb_dim = emb_dim
-        self.linear = torch.nn.Linear(emb_dim, emb_dim)
+#         self.emb_dim = emb_dim
+#         self.linear = torch.nn.Linear(emb_dim, emb_dim)
 
-        ### Mapping 0/1 edge features to embedding
-        self.edge_encoder = torch.nn.Linear(9, emb_dim)
+#         ### Mapping 0/1 edge features to embedding
+#         self.edge_encoder = torch.nn.Linear(9, emb_dim)
 
-        ### Mapping uniform input features to embedding.
-        self.input_layer = input_layer
-        if self.input_layer:
-            self.input_node_embeddings = torch.nn.Embedding(2, emb_dim)
-            torch.nn.init.xavier_uniform_(self.input_node_embeddings.weight.data)
+#         ### Mapping uniform input features to embedding.
+#         self.input_layer = input_layer
+#         if self.input_layer:
+#             self.input_node_embeddings = torch.nn.Embedding(2, emb_dim)
+#             torch.nn.init.xavier_uniform_(self.input_node_embeddings.weight.data)
 
-        self.aggr = aggr
+#         self.aggr = aggr
 
-    def norm(self, edge_index, num_nodes, dtype):
-        ### assuming that self-loops have been already added in edge_index
-        edge_weight = torch.ones((edge_index.size(1), ), dtype=dtype,
-                                     device=edge_index.device)
-        row, col = edge_index
-        deg = scatter_add(edge_weight, row, dim=0, dim_size=num_nodes)
-        deg_inv_sqrt = deg.pow(-0.5)
-        deg_inv_sqrt[deg_inv_sqrt == float('inf')] = 0
+#     def norm(self, edge_index, num_nodes, dtype):
+#         ### assuming that self-loops have been already added in edge_index
+#         edge_weight = torch.ones((edge_index.size(1), ), dtype=dtype,
+#                                      device=edge_index.device)
+#         row, col = edge_index
+#         deg = scatter_add(edge_weight, row, dim=0, dim_size=num_nodes)
+#         deg_inv_sqrt = deg.pow(-0.5)
+#         deg_inv_sqrt[deg_inv_sqrt == float('inf')] = 0
 
-        return deg_inv_sqrt[row] * edge_weight * deg_inv_sqrt[col]
+#         return deg_inv_sqrt[row] * edge_weight * deg_inv_sqrt[col]
 
 
-    def forward(self, x, edge_index, edge_attr):
-        #add self loops in the edge space
-        edge_index = add_self_loops(edge_index, num_nodes = x.size(0))
+#     def forward(self, x, edge_index, edge_attr):
+#         #add self loops in the edge space
+#         edge_index = add_self_loops(edge_index, num_nodes = x.size(0))
 
-        #add features corresponding to self-loop edges.
-        self_loop_attr = torch.zeros(x.size(0), 9)
-        self_loop_attr[:,7] = 1 # attribute for self-loop edge
-        self_loop_attr = self_loop_attr.to(edge_attr.device).to(edge_attr.dtype)
-        edge_attr = torch.cat((edge_attr, self_loop_attr), dim = 0)
+#         #add features corresponding to self-loop edges.
+#         self_loop_attr = torch.zeros(x.size(0), 9)
+#         self_loop_attr[:,7] = 1 # attribute for self-loop edge
+#         self_loop_attr = self_loop_attr.to(edge_attr.device).to(edge_attr.dtype)
+#         edge_attr = torch.cat((edge_attr, self_loop_attr), dim = 0)
 
-        edge_embeddings = self.edge_encoder(edge_attr)
+#         edge_embeddings = self.edge_encoder(edge_attr)
 
-        if self.input_layer:
-            x = self.input_node_embeddings(x.to(torch.int64).view(-1,))
+#         if self.input_layer:
+#             x = self.input_node_embeddings(x.to(torch.int64).view(-1,))
 
-        norm = self.norm(edge_index, x.size(0), x.dtype)
+#         norm = self.norm(edge_index, x.size(0), x.dtype)
 
-        x = self.linear(x)
+#         x = self.linear(x)
 
-        return self.propagate(self.aggr, edge_index, x=x, edge_attr=edge_embeddings, norm = norm)
+#         return self.propagate(self.aggr, edge_index, x=x, edge_attr=edge_embeddings, norm = norm)
 
-    def message(self, x_j, edge_attr, norm):
-        return norm.view(-1, 1) * (x_j + edge_attr)
+#     def message(self, x_j, edge_attr, norm):
+#         return norm.view(-1, 1) * (x_j + edge_attr)
 
 
 class GATConv(MessagePassing):
@@ -261,7 +261,7 @@ class GNN(torch.nn.Module):
             if gnn_type == "gin":
                 self.gnns.append(GINConv(emb_dim, aggr = "add", input_layer = input_layer))
             elif gnn_type == "gcn":
-                self.gnns.append(GCNConv(emb_dim, input_layer = input_layer))
+                raise Exception("Not Implemented")
             elif gnn_type == "gat":
                 self.gnns.append(GATConv(emb_dim, input_layer = input_layer))
             elif gnn_type == "graphsage":
