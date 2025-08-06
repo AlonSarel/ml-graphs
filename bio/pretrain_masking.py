@@ -97,7 +97,7 @@ def main():
 
     model_file_path = Path(args.model_file)
     assert Path(args.model_file).parent.exists(), f"Directory {model_file_path.parent} does not exist"
-    assert not Path(args.model_file).parent.exists(), f"{model_file_path.parent} already exists"
+    assert not Path(args.model_file + ".pth").parent.exists(), f"{model_file_path.parent} already exists"
 
     torch.manual_seed(0)
     np.random.seed(0)
