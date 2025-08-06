@@ -1,4 +1,5 @@
 import argparse
+from pathlib import Path
 
 from loader import BioDataset
 from dataloader import DataLoaderMasking 
@@ -93,6 +94,10 @@ def main():
     parser.add_argument('--seed', type=int, default=0, help = "Seed for splitting dataset.")
     parser.add_argument('--num_workers', type=int, default = 8, help='number of workers for dataset loading')
     args = parser.parse_args()
+
+    model_file_path = Path(args.model_file)
+    assert Path(args.model_file).parent.exists(), f"Directory {model_file_path.parent} does not exist"
+    assert not Path(args.model_file).parent.exists(), f"{model_file_path.parent} already exists"
 
     torch.manual_seed(0)
     np.random.seed(0)
