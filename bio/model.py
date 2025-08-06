@@ -47,7 +47,7 @@ class GINConv(MessagePassing):
         if self.input_layer:
             x = self.input_node_embeddings(x.to(torch.int64).view(-1,))
             
-        return self.propagate(edge_index=edge_index, x=x, edge_attr=edge_embeddings)
+        return self.propagate(edge_index=edge_index[0], x=x, edge_attr=edge_embeddings)
 
     def message(self, x_j, edge_attr):
         return torch.cat([x_j, edge_attr], dim = 1)
