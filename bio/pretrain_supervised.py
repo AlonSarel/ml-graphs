@@ -138,6 +138,7 @@ def main():
         print("====epoch " + str(epoch))
     
         train_loss = train(args, model, device, train_loader, optimizer)
+        print("train_loss", train_loss)
 
     if not args.output_model_file == "":
         torch.save(model.gnn.state_dict(), args.output_model_file + ".pth")

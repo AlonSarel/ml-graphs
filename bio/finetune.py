@@ -139,7 +139,7 @@ def main():
     model = GNN_graphpred(args.num_layer, args.emb_dim, num_tasks, JK = args.JK, drop_ratio = args.dropout_ratio, graph_pooling = args.graph_pooling, gnn_type = args.gnn_type)
 
     if not args.model_file == "":
-        model.from_pretrained(args.model_file)
+        model.from_pretrained(args.model_file+".pth")
     
     model.to(device)
 
@@ -158,9 +158,7 @@ def main():
 
 
     if not args.filename == "":
-        if os.path.exists(args.filename):
-            print("removed existing file!!")
-            os.remove(args.filename)
+        assert not os.path.exists(args.filename), f"{args.filename} exists"
 
     for epoch in range(1, args.epochs+1):
         print("====epoch " + str(epoch))
@@ -194,7 +192,7 @@ def main():
     os.makedirs("result/finetune_seed" + str(args.runseed), exist_ok=True)
 
     if not args.filename == "":
-        with open("result/finetune_seed" + str(args.runseed)+ "/" + args.filename, 'wb') as f:
+        with open("result/finetune_seed" + str(args.runseed)+ "/" + args.filename + ".pkl", 'wb') as f:
             if args.split == "random":
                 pickle.dump({"train": np.array(train_acc_list), "val": np.array(val_acc_list), "test": np.array(test_acc_list)}, f)
             else:
