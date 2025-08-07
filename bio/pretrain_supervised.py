@@ -78,7 +78,7 @@ def main():
     assert output_model_file_path.parent.exists(), f"Directory {output_model_file_path.parent} does not exist"
     assert not output_model_file_path.exists(), f"{output_model_file_path} already exists"
 
-    input_model_file_path = Path.(args.input_model_file+".pth")
+    input_model_file_path = Path(args.input_model_file+".pth")
     assert input_model_file_path.exists(), f"{input_model_file_path} does not exist"
 
 
