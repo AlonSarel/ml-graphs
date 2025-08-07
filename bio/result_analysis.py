@@ -13,8 +13,11 @@ def analysis():
 
     result_dict = {}  
     for seed_result_path in ["finetune_seed" + str(i) for i in range(10)]:
+        path = os.path.join(parent_result_path, seed_result_path)
+        if (not os.path.exists(path)):
+            continue
         result_dict[seed_result_path] = {}
-        seed_result_names = os.listdir(os.path.join(parent_result_path, seed_result_path))
+        seed_result_names = os.listdir(path)
         filtered_seed_result_names = seed_result_names #[n for n in seed_result_names if split in n]
         #filtered_seed_result_names = ["speciessplit_cbow_l1-1_center0_epoch100", "speciessplit_gae_epoch100", "speciessplit_supervised_drop0.2_cbow_l1-1_center0_epoch100_epoch100"]
         for name in filtered_seed_result_names:
@@ -111,18 +114,19 @@ def analysis():
         mean_task_result_dict[experiment] = np.array(test_hard_list).mean(axis=0)
 
     experiment_pairs = [
-        ('_supervised_masking', '_supervised'),
-        ('_supervised_masking', '_masking'),
-        ('_supervised_masking', '_nopretrain'),
-        ('_masking', '_nopretrain'),
-        ('_supervised', '_nopretrain'),
-        ('_supervised_contextpred', '_supervised'),
-        ('_supervised_contextpred', '_contextpred'),
-        ('_supervised_contextpred', '_nopretrain'),
-        ('_contextpred', '_nopretrain'),
+        ('finetune_masking_then_supervised.pkl', 'finetune_only.pkl',)
+        # ('_supervised_masking', '_supervised'),
+        # ('_supervised_masking', '_masking'),
+        # ('_supervised_masking', '_nopretrain'),
+        # ('_masking', '_nopretrain'),
+        # ('_supervised', '_nopretrain'),
+        # ('_supervised_contextpred', '_supervised'),
+        # ('_supervised_contextpred', '_contextpred'),
+        # ('_supervised_contextpred', '_nopretrain'),
+        # ('_contextpred', '_nopretrain'),
     ]
 
-    for architecture in ['gin']: 
+    for architecture in ['']: 
         for exp_y, exp_x in experiment_pairs:
             method_y = architecture + exp_y
             method_x = architecture + exp_x
