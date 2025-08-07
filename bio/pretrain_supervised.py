@@ -74,10 +74,12 @@ def main():
     parser.add_argument('--split', type=str, default = "species", help='Random or species split')
     args = parser.parse_args()
 
-    for file in [args.input_model_file, args.output_model_file]:
-        model_file_path = Path(file+".pth")
-        assert model_file_path.parent.exists(), f"Directory {model_file_path.parent} does not exist"
-        assert not model_file_path.exists(), f"{model_file_path} already exists"
+    output_model_file_path = Path(args.output_model_file+".pth")
+    assert output_model_file_path.parent.exists(), f"Directory {output_model_file_path.parent} does not exist"
+    assert not output_model_file_path.exists(), f"{output_model_file_path} already exists"
+
+    input_model_file_path = Path.(args.input_model_file+".pth")
+    assert input_model_file_path.exists(), f"{input_model_file_path} does not exist"
 
 
     torch.manual_seed(0)
