@@ -414,6 +414,9 @@ class GNNMulti_graphpred(torch.nn.Module):
             self.pool = GlobalAttention(gate_nn = torch.nn.Linear(emb_dim, 1))
         else:
             raise ValueError("Invalid graph pooling type.")
+        
+    def from_pretrained(self, model_file):
+        self.multi_head_gnn.load_state_dict(torch.load(model_file, map_location=lambda storage, loc: storage))
 
     def forward(self, data):
         x, edge_index, edge_attr, batch = data.x, data.edge_index, data.edge_attr, data.batch
