@@ -198,8 +198,8 @@ def main():
             else:
                 pickle.dump({"train": np.array(train_acc_list), "val": np.array(val_acc_list), "test_easy": np.array(test_acc_easy_list), "test_hard": np.array(test_acc_hard_list)}, f)
 
-        torch.save(model.multi_head_gnn.state_dict(), args.output_model_file + ".pth")
-        torch.save(model.task_head_attention.data, args.output_model_file + ".attn.pth")
+        torch.save(model.multi_head_gnn.state_dict(), args.filename + ".pth")
+        torch.save(model.task_head_attention.data, args.filename + ".attn.pth")
 
 
 if __name__ == "__main__":
