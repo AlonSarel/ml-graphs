@@ -95,6 +95,7 @@ def main():
     parser.add_argument('--num_workers', type=int, default = 0, help='number of workers for dataset loading')
     parser.add_argument('--eval_train', type=int, default = 0, help='evaluating training or not')
     parser.add_argument('--split', type=str, default = "species", help='Random or species split')
+    parser.add_argument('--num_heads', type=int, default = 1, help='Num of attention heads')
     args = parser.parse_args()
 
     torch.manual_seed(args.runseed)
