@@ -209,7 +209,7 @@ def main():
         torch.save(model.multi_head_gnn.state_dict(), out_pth_dir +"/" + args.filename + ".pth")
 
         for i in range(len(attention_weights_list)):
-            torch.save(attention_weights_list[i], out_pth_dir + "/" + args.filename + str(i) ".attn.pth")
+            torch.save(attention_weights_list[i], out_pth_dir + "/" + args.filename + str(i) + ".attn.pth")
 
 if __name__ == "__main__":
     main()
