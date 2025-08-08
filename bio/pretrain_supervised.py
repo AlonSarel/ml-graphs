@@ -144,7 +144,8 @@ def main():
         print("train_loss", train_loss)
 
     if not args.output_model_file == "":
-        torch.save(model.gnn.state_dict(), args.output_model_file + ".pth")
+        torch.save(model.multi_head_gnn.state_dict(), args.output_model_file + ".pth")
+        torch.save(model.task_head_attention.data, args.output_model_file + ".attn.pth")
 
 
 
