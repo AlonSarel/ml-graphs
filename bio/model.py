@@ -417,26 +417,31 @@ class GNNMulti_graphpred(torch.nn.Module):
 
     def forward(self, data):
         x, edge_index, edge_attr, batch = data.x, data.edge_index, data.edge_attr, data.batch
-        multi_head_rep_conc = self.multi_head_gnn(x, edge_index, edge_attr) # [node, self.num_heads * self.emb_dim]
-        num_nodes = multi_head_rep_conc.size(0)
+        num_nodes = x.size(0)
 
-        # Doing some gpt magic to get shape [node, task, d]
-        multi_head_rep = multi_head_rep_conc.view(num_nodes, self.num_heads, self.emb_dim) # [node, self.num_heads, self.emb_dim]
-        weighted_task_attention = torch.nn.functional.softmax(self.task_head_attention, dim=1)
+        # 1. Multi-head GNN representation: [N, H * D] -> [N, H, D]
+        multi_head_rep = self.multi_head_gnn(x, edge_index, edge_attr).view(num_nodes, self.num_heads, self.emb_dim)
 
-        multi_head_rep_expanded = multi_head_rep.unsqueeze(1) # [node, 1, self.num_heads, self.emb_dim]
-        task_head_attention_expanded = weighted_task_attention.unsqueeze(0) # [1, self.num_tasks, self.num_heads]
+        # 2. Task-specific softmax over heads: [T, H]
+        attn = torch.nn.functional.softmax(self.task_head_attention, dim=1)
 
-        node_rep_per_task = torch.sum(task_head_attention_expanded.unsqueeze(-1) * multi_head_rep_expanded, dim=2) # [node, task, d]
+        # 3. Efficient attention-weighted sum: [N, T, D]
+        node_rep_per_task = torch.einsum('th,nhd->ntd', attn, multi_head_rep)
 
-        node_rep_per_task_reshaped = node_rep_per_task.reshape(num_nodes, self.num_tasks * self.emb_dim) # [node, task * d]
+        # 4. Flatten for pooling: [N, T * D]
+        node_rep_flat = node_rep_per_task.view(num_nodes, -1)
 
-        pooled = self.pool(node_rep_per_task_reshaped, batch).reshape(-1, self.num_tasks, self.emb_dim)  # [B, task, d]
-        center_node_rep = node_rep_per_task_reshaped[data.center_node_idx].reshape(-1, self.num_tasks, self.emb_dim) # [B, task, d]
+        # 5. Pooled graph-level representation: [B, T, D]
+        pooled = self.pool(node_rep_flat, batch).view(-1, self.num_tasks, self.emb_dim)
 
-        graph_rep = torch.cat([pooled, center_node_rep], dim = 2) # [B, task, 2 * d]
+        # 6. Center node representation: [B, T, D]
+        center = node_rep_flat[data.center_node_idx].view(-1, self.num_tasks, self.emb_dim)
 
-        return torch.sum(graph_rep * self.task_weights, dim=2) # [B, tasks]    
+        # 7. Concatenate pooled + center: [B, T, 2D]
+        graph_rep = torch.cat([pooled, center], dim=2)
+
+        # 8. Final projection with task-specific weights: [B, T]
+        return torch.sum(graph_rep * self.task_weights, dim=2) 
         
 if __name__ == "__main__":
     pass
