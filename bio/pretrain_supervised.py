@@ -72,14 +72,16 @@ def main():
     parser.add_argument('--num_workers', type=int, default = 0, help='number of workers for dataset loading')
     parser.add_argument('--seed', type=int, default=42, help = "Seed for splitting dataset.")
     parser.add_argument('--split', type=str, default = "species", help='Random or species split')
+    parser.add_argument('--num_heads', type=int, default = 1, help='Num of attention heads')
     args = parser.parse_args()
 
     output_model_file_path = Path(args.output_model_file+".pth")
     assert output_model_file_path.parent.exists(), f"Directory {output_model_file_path.parent} does not exist"
     assert not output_model_file_path.exists(), f"{output_model_file_path} already exists"
 
-    input_model_file_path = Path(args.input_model_file+".pth")
-    assert input_model_file_path.exists(), f"{input_model_file_path} does not exist"
+    if args.input_model_file:
+        input_model_file_path = Path(args.input_model_file+".pth")
+        assert input_model_file_path.exists(), f"{input_model_file_path} does not exist"
 
 
     torch.manual_seed(0)
@@ -87,8 +89,9 @@ def main():
     device = torch.device("cuda:" + str(args.device)) if torch.cuda.is_available() else torch.device("cpu")
     if torch.cuda.is_available():
         torch.cuda.manual_seed_all(0)
-
-    print("using device " + torch.cuda.get_device_name(device))
+        print("using device " + torch.cuda.get_device_name(device))
+    else:
+        print("not using cuda")
 
     root_supervised = 'dataset/supervised'
 
@@ -124,7 +127,7 @@ def main():
     num_tasks = len(pretrain_dataset[0].go_target_pretrain)
 
     #set up model
-    model = GNNMulti_graphpred(1, args.num_layer, args.emb_dim, num_tasks, drop_ratio = args.dropout_ratio, graph_pooling = args.graph_pooling, gnn_type = args.gnn_type)
+    model = GNNMulti_graphpred(args.num_heads, args.num_layer, args.emb_dim, num_tasks, drop_ratio = args.dropout_ratio, graph_pooling = args.graph_pooling, gnn_type = args.gnn_type)
     if not args.input_model_file == "":
         model.from_pretrained(args.input_model_file + ".pth")
     

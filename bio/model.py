@@ -307,8 +307,8 @@ class MultiHeadGNNLayer(torch.nn.Module):
 
     def forward(self, x, edge_index, edge_attr):
         h_list = []
-        for layer in range(self.num_heads):
-            h = self.heads[layer](x, edge_index, edge_attr)
+        for head in range(self.num_heads):
+            h = self.heads[head](x, edge_index, edge_attr)
             h = F.dropout(h, self.drop_ratio, training = self.training)
             h_list.append(h)
 
@@ -396,10 +396,12 @@ class GNNMulti_graphpred(torch.nn.Module):
         self.multi_head_gnn = MultiHeadGNN(num_heads, num_layer, emb_dim, drop_ratio, gnn_type = gnn_type)
 
         # Task-specific scalar weights per head (for weighting node embeddings)
-        self.task_head_attention = torch.nn.Parameter(torch.randn(num_tasks, self.num_heads))  # [T, H]
+        self.task_head_attention = torch.nn.Parameter(torch.empty(num_tasks, self.num_heads)) # [T, H]
+        self.task_head_attention = torch.nn.init.xavier_normal_(self.task_head_attention) #maybe xavier_uniform_ ?
 
         # Task-specific linear classifier weights (dot product with graph embedding)
-        self.task_weights = torch.nn.Parameter(torch.randn(num_tasks, 2 * emb_dim))  # [T, 2D]
+        self.task_weights = torch.nn.Parameter(torch.empty(num_tasks, 2 * emb_dim))  # [T, 2D]
+        self.task_weights = torch.nn.init.xavier_normal_(self.task_weights)
 
         # Pooling function
         if graph_pooling == "sum":
@@ -415,7 +417,7 @@ class GNNMulti_graphpred(torch.nn.Module):
 
     def forward(self, data):
         x, edge_index, edge_attr, batch = data.x, data.edge_index, data.edge_attr, data.batch
-        multi_head_rep_conc = self.multi_head_gnn(x, edge_index, edge_attr) # [node, self.num_heads, self.emb_dim]
+        multi_head_rep_conc = self.multi_head_gnn(x, edge_index, edge_attr) # [node, self.num_heads * self.emb_dim]
         num_nodes = multi_head_rep_conc.size(0)
 
         # Doing some gpt magic to get shape [node, task, d]

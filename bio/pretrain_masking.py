@@ -3,7 +3,6 @@ from pathlib import Path
 
 from loader import BioDataset
 from dataloader import DataLoaderMasking 
-from voodo_configuration import NUM_HEADS
 
 import torch
 import torch.nn as nn
@@ -94,6 +93,7 @@ def main():
     parser.add_argument('--model_file', type=str, default = '', help='filename to output the model')
     parser.add_argument('--seed', type=int, default=0, help = "Seed for splitting dataset.")
     parser.add_argument('--num_workers', type=int, default = 8, help='number of workers for dataset loading')
+    parser.add_argument('--num_heads', type=int, default = 1, help='Num of attention heads')
     args = parser.parse_args()
 
     model_file_path = Path(args.model_file)
@@ -117,9 +117,10 @@ def main():
     loader = DataLoaderMasking(dataset, batch_size=args.batch_size, shuffle=True, num_workers = args.num_workers)
 
     #set up models, one for pre-training and one for context embeddings
-    model = MultiHeadGNN(NUM_HEADS, args.num_layer, args.emb_dim, drop_ratio = args.dropout_ratio, gnn_type = args.gnn_type).to(device)
+    num_heads = args.num_heads
+    model = MultiHeadGNN(num_heads, args.num_layer, args.emb_dim, drop_ratio = args.dropout_ratio, gnn_type = args.gnn_type).to(device)
     #Linear layer for classifying different edge types
-    linear_pred_edges = torch.nn.Linear(args.emb_dim * NUM_HEADS, 7).to(device)
+    linear_pred_edges = torch.nn.Linear(args.emb_dim * num_heads, 7).to(device)
 
     model_list = [model, linear_pred_edges]
 

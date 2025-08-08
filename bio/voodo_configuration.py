@@ -1,1 +1,0 @@
-NUM_HEADS = 5
