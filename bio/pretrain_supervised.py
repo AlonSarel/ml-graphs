@@ -26,6 +26,14 @@ criterion = nn.BCEWithLogitsLoss()
 def train(args, model, device, loader, optimizer):
     model.train()
 
+    # Optionally: warm-up steps (helps for GPU timing accuracy)
+    for _ in range(4):
+        batch = next(iter(loader)).to(device)
+        _ = model(batch)
+
+    import sys
+    sys.exit(0)
+
     loss_accum = 0
     for step, batch in enumerate(tqdm(loader, desc="Iteration")):
         batch = batch.to(device)

@@ -7,6 +7,8 @@ from loader import BioDataset
 from dataloader import DataLoaderFinetune
 # from torch_scatter import scatter_add
 from torch_geometric.nn.inits import glorot, zeros
+from torch.autograd.profiler import profile
+
 
 class GINConv(MessagePassing):
     """
@@ -421,27 +423,29 @@ class GNNMulti_graphpred(torch.nn.Module):
 
         # 1. Multi-head GNN representation: [N, H * D] → [N, H, D]
         multi_head_rep = self.multi_head_gnn(x, edge_index, edge_attr).reshape(num_nodes, self.num_heads, self.emb_dim)
+        with profile(use_cuda=torch.cuda.is_available()) as prof:
+            # 2. Task-specific attention: [T, H]
+            attn = torch.nn.functional.softmax(self.task_head_attention, dim=1)
 
-        # 2. Task-specific attention: [T, H]
-        attn = torch.nn.functional.softmax(self.task_head_attention, dim=1)
+            # 3. Per-task attention-weighted node representations: [N, T, D]
+            node_rep_per_task = torch.einsum('th,nhd->ntd', attn, multi_head_rep)
 
-        # 3. Per-task attention-weighted node representations: [N, T, D]
-        node_rep_per_task = torch.einsum('th,nhd->ntd', attn, multi_head_rep)
+            # 4. Flatten for pooling: [N, T * D]
+            node_rep_flat = node_rep_per_task.reshape(num_nodes, -1)
 
-        # 4. Flatten for pooling: [N, T * D]
-        node_rep_flat = node_rep_per_task.reshape(num_nodes, -1)
+            # 5. Graph-level pooled representation: [B, T, D]
+            pooled = self.pool(node_rep_flat, batch).reshape(-1, self.num_tasks, self.emb_dim)
 
-        # 5. Graph-level pooled representation: [B, T, D]
-        pooled = self.pool(node_rep_flat, batch).reshape(-1, self.num_tasks, self.emb_dim)
+            # 6. Center node representation: [B, T, D]
+            center = node_rep_flat[data.center_node_idx].reshape(-1, self.num_tasks, self.emb_dim)
 
-        # 6. Center node representation: [B, T, D]
-        center = node_rep_flat[data.center_node_idx].reshape(-1, self.num_tasks, self.emb_dim)
+            # 7. Concatenate pooled + center: [B, T, 2D]
+            graph_rep = torch.cat([pooled, center], dim=2)
 
-        # 7. Concatenate pooled + center: [B, T, 2D]
-        graph_rep = torch.cat([pooled, center], dim=2)
-
-        # 8. Final projection using task-specific weights: [B, T]
-        return torch.sum(graph_rep * self.task_weights, dim=2)
+            # 8. Final projection using task-specific weights: [B, T]
+            res = torch.sum(graph_rep * self.task_weights, dim=2)
+        print(prof.key_averages().table(sort_by="cuda_time_total" if torch.cuda.is_available() else "cpu_time_total", row_limit=20))
+        return res
         
 if __name__ == "__main__":
     pass
