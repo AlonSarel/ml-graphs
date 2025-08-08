@@ -12,7 +12,7 @@ import torch.optim as optim
 from tqdm import tqdm
 import numpy as np
 
-from model import GNN, GNN_graphpred
+from model import GNN, GNN_graphpred, GNNMulti_graphpred
 from sklearn.metrics import roc_auc_score
 
 import pandas as pd
@@ -136,7 +136,7 @@ def main():
     print(train_dataset[0])
 
     #set up model
-    model = GNN_graphpred(args.num_layer, args.emb_dim, num_tasks, JK = args.JK, drop_ratio = args.dropout_ratio, graph_pooling = args.graph_pooling, gnn_type = args.gnn_type)
+    model = GNNMulti_graphpred(args.num_heads, args.num_layer, args.emb_dim, num_tasks, drop_ratio = args.dropout_ratio, graph_pooling = args.graph_pooling, gnn_type = args.gnn_type)
 
     if not args.model_file == "":
         model.from_pretrained(args.model_file+".pth")
@@ -197,6 +197,9 @@ def main():
                 pickle.dump({"train": np.array(train_acc_list), "val": np.array(val_acc_list), "test": np.array(test_acc_list)}, f)
             else:
                 pickle.dump({"train": np.array(train_acc_list), "val": np.array(val_acc_list), "test_easy": np.array(test_acc_easy_list), "test_hard": np.array(test_acc_hard_list)}, f)
+
+        torch.save(model.multi_head_gnn.state_dict(), args.output_model_file + ".pth")
+        torch.save(model.task_head_attention.data, args.output_model_file + ".attn.pth")
 
 
 if __name__ == "__main__":
