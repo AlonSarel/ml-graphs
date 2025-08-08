@@ -161,10 +161,14 @@ def main():
     if not args.filename == "":
         assert not os.path.exists(args.filename), f"{args.filename} exists"
 
+    attention_weights_list = []
+
     for epoch in range(1, args.epochs+1):
         print("====epoch " + str(epoch))
         
         train(args, model, device, train_loader, optimizer)
+
+        attention_weights_list.append(model.task_head_attention.data.clone().cpu())
 
         print("====Evaluation")
         if args.eval_train:
@@ -190,18 +194,22 @@ def main():
 
         print("")
 
-    os.makedirs("result/finetune_seed" + str(args.runseed), exist_ok=True)
+    out_dir = "result/finetune_seed" + str(args.runseed)
+    os.makedirs(out_dir, exist_ok=True)
+    out_pth_dir = out_dir+"/pth_out"
+    os.makedirs(out_pth_dir, exist_ok=True)
 
     if not args.filename == "":
-        with open("result/finetune_seed" + str(args.runseed)+ "/" + args.filename + ".pkl", 'wb') as f:
+        with open(out_dir+ "/" + args.filename + ".pkl", 'wb') as f:
             if args.split == "random":
                 pickle.dump({"train": np.array(train_acc_list), "val": np.array(val_acc_list), "test": np.array(test_acc_list)}, f)
             else:
                 pickle.dump({"train": np.array(train_acc_list), "val": np.array(val_acc_list), "test_easy": np.array(test_acc_easy_list), "test_hard": np.array(test_acc_hard_list)}, f)
 
-        torch.save(model.multi_head_gnn.state_dict(), args.filename + ".pth")
-        torch.save(model.task_head_attention.data, args.filename + ".attn.pth")
+        torch.save(model.multi_head_gnn.state_dict(), out_pth_dir +"/" + args.filename + ".pth")
 
+        for i in range(len(attention_weights_list)):
+            torch.save(attention_weights_list[i], out_pth_dir + "/" + args.filename + str(i) ".attn.pth")
 
 if __name__ == "__main__":
     main()
