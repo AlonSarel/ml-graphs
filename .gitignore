@@ -1,3 +1,5 @@
 bio/dataset/*
 bio/figures/*
 bio/result/*
+*pyc
+*zip
