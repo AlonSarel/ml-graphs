@@ -92,18 +92,21 @@ def main():
     parser.add_argument('--gnn_type', type=str, default="gin")
     parser.add_argument('--model_file', type=str, default = '', help='filename to output the model')
     parser.add_argument('--seed', type=int, default=0, help = "Seed for splitting dataset.")
+    parser.add_argument('--runseed', type=int, default=0, help = "Seed for running experiments.")
     parser.add_argument('--num_workers', type=int, default = 8, help='number of workers for dataset loading')
     args = parser.parse_args()
+
+    assert args.seed == 0, 'This feature is ignored.'
 
     model_file_path = Path(args.model_file)
     assert Path(args.model_file).parent.exists(), f"Directory {model_file_path.parent} does not exist"
     assert not Path(args.model_file + ".pth").exists(), f"{model_file_path} already exists"
 
-    torch.manual_seed(0)
-    np.random.seed(0)
+    torch.manual_seed(args.runseed)
+    np.random.seed(args.runseed)
     device = torch.device("cuda:" + str(args.device)) if torch.cuda.is_available() else torch.device("cpu")
     if torch.cuda.is_available():
-        torch.cuda.manual_seed_all(0)
+        torch.cuda.manual_seed_all(args.runseed)
 
     print("num layer: %d mask rate: %f" %(args.num_layer, args.mask_rate))
 
