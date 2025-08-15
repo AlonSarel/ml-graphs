@@ -21,7 +21,7 @@ import argparse
 FIGURE_FILE_TYPE = 'png'
 FIGURE_LABEL_NAMES = True
 
-def our_analysis(target_path: Union[Path, str], compare_all=True, comparsion_list=[]):
+def our_analysis(target_path: Union[Path, str], compare_all=True, comparsion_list=[], allow_mix=False):
     if type(target_path) == str:
         target_path = Path(target_path)
 
@@ -46,9 +46,12 @@ def our_analysis(target_path: Union[Path, str], compare_all=True, comparsion_lis
             run_mods_with_seeds[run_mod_name].append(file)
         
         is_seed_mode_set.add(all_dirs)
-    
-    assert len(is_seed_mode_set) == 1, 'All run mods must either contain only dirs (aka seeds) or contain a pkl in them'
-    is_seed_mode = is_seed_mode_set.pop() # This should'nt have any effect on the code
+    if len(is_seed_mode_set) == 1:
+        is_seed_mode = is_seed_mode_set.pop() # This should'nt have any effect on the code
+    else:
+        assert allow_mix, 'All run mods must either contain only dirs (aka seeds) or contain a pkl in them, please use allow mixed'
+        is_seed_mode = True
+
     print('Currently running in seed mode' if is_seed_mode else 'Currently not running in seed mode')
     print('Current run modes:')
     for run_mod_name in run_mods_with_seeds.keys():
@@ -132,6 +135,8 @@ def our_analysis(target_path: Union[Path, str], compare_all=True, comparsion_lis
     for exp_y, exp_x in experiment_pairs:
         method_y = exp_y
         method_x = exp_x
+        if 'finetune_only' in method_y or 'only_finetune' in method_y:
+            method_y, method_x = method_x, method_y
         print('\t- {} vs {}'.format(method_y, method_x))
         y_data, x_data = mean_task_result_dict[method_y], mean_task_result_dict[method_x]
         assert len(y_data) == len(x_data), 'Data length mismatch'
@@ -152,11 +157,13 @@ def main():
     parser = argparse.ArgumentParser(description='result analysis')
     parser.add_argument('--path', type=Path, required=True,
                         help='Path to folder with results')
+    parser.add_argument('--allow-mix', action='store_true',
+                        help='Allow folders to have a mix of seed mode and non seed mode')
     # parser.add_argument('--compare-all', type=bool, default=True,
     #                     help='Should you compare all experiments to all experiments')
     # assert args.compare_all, 'Other options not supported'
     args = parser.parse_args()
-    our_analysis(args.path)
+    our_analysis(args.path, allow_mix=args.allow_mix)
     
 
 if __name__ == "__main__":
