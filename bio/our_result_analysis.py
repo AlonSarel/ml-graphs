@@ -21,7 +21,13 @@ import argparse
 FIGURE_FILE_TYPE = 'png'
 FIGURE_LABEL_NAMES = True
 
-def our_analysis(target_path: Union[Path, str], compare_all=True, comparsion_list=[], allow_mix=False):
+def our_analysis(target_path: Union[Path, str],
+                 dest_dir="figures",
+                 compare_all=True,
+                 comparsion_list=[],
+                 translation_table={},
+                 map_all=False,
+                 allow_mix=False):
     if type(target_path) == str:
         target_path = Path(target_path)
 
@@ -97,7 +103,7 @@ def our_analysis(target_path: Union[Path, str], compare_all=True, comparsion_lis
     for k, _ in sorted_test_hard:
         print('\t- {}: {} ± {}'.format(k, mean_result_dict[k]['test_hard']*100, std_result_dict[k]['test_hard']*100))
 
-    os.makedirs("figures", exist_ok=True)
+    os.makedirs(dest_dir, exist_ok=True)
 
     # plot rocs comparison graphs and save
     def plot_scatter(x_data, y_data):
@@ -114,7 +120,7 @@ def our_analysis(target_path: Union[Path, str], compare_all=True, comparsion_lis
     def save_fig(method_y, method_x, ax):
         fig_name = get_fig_name(method_y, method_x)
         fig = ax.get_figure()
-        fig.savefig(os.path.join('figures', fig_name))
+        fig.savefig(os.path.join(dest_dir, fig_name))
     
     mean_task_result_dict: Dict[str, np.array] = dict()
     for experiment, seeds in best_result_dict.items():
@@ -143,8 +149,13 @@ def our_analysis(target_path: Union[Path, str], compare_all=True, comparsion_lis
         ax = plot_scatter(x_data, y_data)
         fig = ax.get_figure()
         if FIGURE_LABEL_NAMES:
-            ax.set_xlabel(method_x)
-            ax.set_ylabel(method_y)
+            if map_all:
+                for method in [method_x, method_y]:
+                    assert method in translation_table, '"{}" doesn\'t have a mapped name'.format(method)
+            method_x_label = translation_table.get(method_x, method_x)
+            method_y_label = translation_table.get(method_y, method_y)
+            ax.set_xlabel(method_x_label)
+            ax.set_ylabel(method_y_label)
         fig.set_size_inches(6, 6)
         save_fig(method_y, method_x, ax)
         plt.close(fig) 
@@ -153,17 +164,61 @@ def our_analysis(target_path: Union[Path, str], compare_all=True, comparsion_lis
             print("\t\t- Negative transfer of " + exp_y[1:])
             print(np.sum(x_data > y_data + 0.001))
 
+def parse_dict(s: str):
+    """Parses 'key:value' into a dictionary entry."""
+    parts = s.split(":")
+    if len(parts) != 2:
+        raise argparse.ArgumentTypeError(f"Invalid dict entry: {s}. Expected format 'key:value'.")
+    return parts[0], parts[1]
+
+def parse_pair(s: str):
+    """Parses 'a:b' into a tuple ('a', 'b')."""
+    parts = s.split(":")
+    if len(parts) != 2:
+        raise argparse.ArgumentTypeError(f"Invalid pair: {s}. Expected format 'key:value'.")
+    return tuple(parts)
+
 def main():
     parser = argparse.ArgumentParser(description='result analysis')
     parser.add_argument('--path', type=Path, required=True,
                         help='Path to folder with results')
+    parser.add_argument('--dest-dir', type=str, default="figures",
+                    help='Path to save the results')
+
     parser.add_argument('--allow-mix', action='store_true',
                         help='Allow folders to have a mix of seed mode and non seed mode')
-    # parser.add_argument('--compare-all', type=bool, default=True,
-    #                     help='Should you compare all experiments to all experiments')
-    # assert args.compare_all, 'Other options not supported'
+    
+    parser.add_argument('--map-all', action='store_true',
+                    help='Force it so all of the comparsion pairs would have a renamed result')
+    parser.add_argument(
+        "--name-mapping",
+        type=parse_dict,
+        nargs="+",  # multiple entries allowed
+        help="Dictionary of name translations as key:value",
+        required=False
+    )
+
+    parser.add_argument('--no-compare-all', action='store_false',
+                help='Using this mode we would only compare some of the results',
+                dest='compare_all')
+    parser.add_argument(
+        "--comparsion-pairs",
+        type=parse_pair,
+        nargs="+",  # multiple pairs allowed
+        help="List of modes to compare."
+    )
+
     args = parser.parse_args()
-    our_analysis(args.path, allow_mix=args.allow_mix)
+    name_mapping = dict(args.name_mapping) if args.name_mapping is not None else dict()
+    comparsion_pairs = args.comparsion_pairs if args.comparsion_pairs else list()
+
+    our_analysis(args.path,
+                 dest_dir=args.dest_dir,
+                 compare_all=args.compare_all,
+                 comparsion_list=comparsion_pairs,
+                 translation_table=name_mapping,
+                 map_all=args.map_all,
+                 allow_mix=args.allow_mix)
     
 
 if __name__ == "__main__":
