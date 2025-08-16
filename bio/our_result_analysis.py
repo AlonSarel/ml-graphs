@@ -21,13 +21,33 @@ import argparse
 FIGURE_FILE_TYPE = 'png'
 FIGURE_LABEL_NAMES = True
 
+
+def most_stable_index(arr, window_size, max_stuff, best_range=0.001):
+    arr = np.array(arr)
+    n = len(arr)
+    if window_size > n:
+        raise ValueError("Window size must be <= length of array")
+    
+    # Compute variances for each sliding window
+    means = np.array([
+        np.mean(arr[i:i+window_size])  # population variance
+        for i in range(n - window_size + 1)
+    ])
+
+    in_range_list = ((max_stuff * (1-best_range)) < means) & (means < (max_stuff * (1+best_range)))
+    return np.argmax(in_range_list)
+    # # Find the index of the smallest variance
+    # min_var_idx = np.argmax(variances)
+    # return min_var_idx, variances[min_var_idx]
+
 def our_analysis(target_path: Union[Path, str],
                  dest_dir="figures",
                  compare_all=True,
                  comparsion_list=[],
                  translation_table={},
                  map_all=False,
-                 allow_mix=False):
+                 allow_mix=False,
+                 use_special_idx_select=False):
     if type(target_path) == str:
         target_path = Path(target_path)
 
@@ -66,6 +86,7 @@ def our_analysis(target_path: Union[Path, str],
     # Our result dict will be run_mode: seed: results
     best_result_dict: Dict[str, Dict[str, Dict[str, int]]] = dict()
     mean_result_dict: Dict[str, Dict[str, float]] = dict()
+    median_result_dict: Dict[str, Dict[str, float]] = dict()
     std_result_dict: Dict[str, Dict[str, float]] = dict()
 
     print('Loading results and calculating means')
@@ -83,6 +104,14 @@ def our_analysis(target_path: Union[Path, str],
             best_result_dict[run_mod_name][seed_name] = dict()
             val_ave = np.average(result['val'], axis = 1)
             best_epoch = np.argmax(val_ave)
+            print(f"best_epoch {run_mod_name} {seed_name}: {best_epoch}")
+
+            if use_special_idx_select:
+                WINDOW_SIZE = 8
+                idx = most_stable_index(val_ave, WINDOW_SIZE, val_ave[best_epoch])
+                best_epoch = idx + WINDOW_SIZE // 2
+                print(f"new best_epoch {run_mod_name} {seed_name}: {best_epoch}")
+
             test_easy_best = result["test_easy"][best_epoch]            
             test_hard_best = result["test_hard"][best_epoch]
             best_result_dict[run_mod_name][seed_name]['test_easy'] = test_easy_best
@@ -94,6 +123,10 @@ def our_analysis(target_path: Union[Path, str],
         mean_result_dict[run_mod_name] = dict()
         mean_result_dict[run_mod_name]['test_easy'] = np.array(test_easy_list).mean(axis=1).mean()
         mean_result_dict[run_mod_name]['test_hard'] = np.array(test_hard_list).mean(axis=1).mean()
+
+        median_result_dict[run_mod_name] = dict()
+        median_result_dict[run_mod_name]['test_easy'] = np.median(np.array(test_easy_list).mean(axis=1))
+        median_result_dict[run_mod_name]['test_hard'] = np.median(np.array(test_hard_list).mean(axis=1))
         std_result_dict[run_mod_name] = dict()
         std_result_dict[run_mod_name]['test_easy'] = np.array(test_easy_list).mean(axis=1).std()
         std_result_dict[run_mod_name]['test_hard'] = np.array(test_hard_list).mean(axis=1).std()
@@ -101,7 +134,8 @@ def our_analysis(target_path: Union[Path, str],
     print('Averages (mean ± std):')
     sorted_test_hard = sorted(mean_result_dict.items(), key=lambda kv: kv[1]['test_hard'], reverse=True)
     for k, _ in sorted_test_hard:
-        print('\t- {}: {} ± {}'.format(k, mean_result_dict[k]['test_hard']*100, std_result_dict[k]['test_hard']*100))
+        print('\t- {}: {} ± {} median: {}'.format(k, mean_result_dict[k]['test_hard']*100, std_result_dict[k]['test_hard']*100, median_result_dict[k]['test_hard']*100))
+        # print('\t- {} - median: {}'.format(k, median_result_dict[k]['test_hard']*100))
 
     os.makedirs(dest_dir, exist_ok=True)
 
@@ -154,8 +188,8 @@ def our_analysis(target_path: Union[Path, str],
                     assert method in translation_table, '"{}" doesn\'t have a mapped name'.format(method)
             method_x_label = translation_table.get(method_x, method_x)
             method_y_label = translation_table.get(method_y, method_y)
-            ax.set_xlabel(method_x_label)
-            ax.set_ylabel(method_y_label)
+            ax.set_xlabel(method_x_label, fontsize=16)
+            ax.set_ylabel(method_y_label, fontsize=16)
         fig.set_size_inches(6, 6)
         save_fig(method_y, method_x, ax)
         plt.close(fig) 
@@ -187,7 +221,9 @@ def main():
 
     parser.add_argument('--allow-mix', action='store_true',
                         help='Allow folders to have a mix of seed mode and non seed mode')
-    
+    parser.add_argument('--use-special-index-select', action='store_true',
+                    help='Use a special logic to choose the most stable idx compared to the max')
+
     parser.add_argument('--map-all', action='store_true',
                     help='Force it so all of the comparsion pairs would have a renamed result')
     parser.add_argument(
@@ -218,7 +254,8 @@ def main():
                  comparsion_list=comparsion_pairs,
                  translation_table=name_mapping,
                  map_all=args.map_all,
-                 allow_mix=args.allow_mix)
+                 allow_mix=args.allow_mix,
+                 use_special_idx_select=args.use_special_index_select)
     
 
 if __name__ == "__main__":
