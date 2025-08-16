@@ -14,7 +14,7 @@ import torch.optim as optim
 from tqdm import tqdm
 import numpy as np
 
-from model import GNN, GNNMulti_graphpred
+from model import GNN, GNNMulti_graphpred, GNN_graphpred
 from sklearn.metrics import roc_auc_score
 
 import pandas as pd
